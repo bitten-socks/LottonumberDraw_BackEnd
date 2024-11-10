@@ -166,7 +166,3 @@ def get_numbers():
     numbers.sort()
     print("서버에서 반환하는 번호:", numbers)  # 콘솔에 번호 출력
     return jsonify({"numbers": numbers})  # 클라이언트로 번호 반환
-
-# 서버 실행
-if __name__ == '__main__':
-    app.run(debug=True)
