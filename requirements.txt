@@ -11,3 +11,5 @@ werkzeug==2.2.2 ; python_version >= '3.7'
 zipp==3.11.0 ; python_version >= '3.7'
 flask-cors==3.0.0
 requests==2.28.1
+beautifulsoup4==4.11.1
+numpy==1.23.5
