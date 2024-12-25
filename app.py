@@ -4,6 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 import numpy as np
 import random
+import re
 
 app = Flask(__name__)
 # CORS 설정: 다른 출처에서 오는 요청을 허용 (cross-origin resource sharing)
@@ -36,7 +37,9 @@ def fetch_lotto_winningNumber():
     # 현재 회차 가져오기
     current_play = {}
     draw_number = soup.find('h4').get_text(strip=True)  # 회차 정보 추출
-    current_play['draw'] = draw_number
+    match = re.search(r'\d+', draw_number)  # 숫자만 추출
+    if match:
+        current_play['draw'] = int(match.group())  # 숫자를 int로 저장
 
     # 당첨 번호 가져오기
     winning_number = {}
