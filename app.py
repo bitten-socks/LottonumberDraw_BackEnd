@@ -194,12 +194,13 @@ def get_numbers():
 # 실제 애플리케이션용 엔드포인트
 @app.route('/api/lotto/current', methods=['GET'])
 def get_lotto_data():
-    data = fetch_lotto_winningNumber()  # 데이터를 가져오는 함수 호출
-    return jsonify({
-        'currentRound': data['currentRound'],
-        'winningNumbers': data['winningNumbers'],
-        'bonusNumber': data['bonusNumber']
-    })
+    try:
+        data = fetch_lotto_winningNumber()  # 데이터를 가져오는 함수 호출
+        return jsonify({
+            'currentRound': data['current_play']['draw'],
+            'winningNumbers': data['winning_number']['numbers'],
+            'bonusNumber': data['winning_number']['bonus']
+        })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
