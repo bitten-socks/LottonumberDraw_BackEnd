@@ -26,6 +26,30 @@ def fetch_lotto_probability():
             probability_data[number] = int(winning_count)  # 번호와 당첨 횟수 저장
     return probability_data
 
+# 현재 회차 및 당첨 번호 데이터를 가져오는 함수
+def fetch_lotto_winningNumber():
+    url = "https://dhlottery.co.kr/gameResult.do?method=byWin&wiselog=C_A_1_2"
+    response = requests.get(url)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    # 현재 회차 가져오기
+    current_play = {}
+    draw_number = soup.find('h4').get_text(strip=True)  # 회차 정보 추출
+    current_play['draw'] = draw_number
+
+    # 당첨 번호 가져오기
+    winning_number = {}
+    number_tags = soup.select('.ball_645')
+    winning_numbers = [int(tag.get_text()) for tag in number_tags]
+    if len(winning_numbers) >= 6:
+        winning_number['numbers'] = winning_numbers[:6]  # 1등 당첨 번호
+        winning_number['bonus'] = winning_numbers[6]     # 보너스 번호
+
+    return {
+        "current_play": current_play,
+        "winning_number": winning_number
+    }
 # 로또 번호 추첨 라운드 계산 함수
 def calculate_current_round(probability_data):
     total_winning_count = sum(probability_data.values())  # 전체 당첨 횟수 합산
@@ -166,3 +190,15 @@ def get_numbers():
     numbers.sort()
     print("서버에서 반환하는 번호:", numbers)  # 콘솔에 번호 출력
     return jsonify({"numbers": numbers})  # 클라이언트로 번호 반환
+
+# 실제 애플리케이션용 엔드포인트
+@app.route('/api/lotto/current', methods=['GET'])
+def get_current_lotto_data():
+    try:
+        data = fetch_lotto_winningNumber()
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
