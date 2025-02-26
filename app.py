@@ -320,9 +320,10 @@ def get_lotto_data():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# API 엔드포인트: 추천 번호군 반환
-@app.route('/api/numbers/recommend', methods=['GET'])
+@app.route('/api/numbers/recommend', methods=['GET', 'OPTIONS'])
 def recommend_numbers():
+    if request.method == 'OPTIONS':
+         return '', 200
     try:
         recommended = get_recommended_numbers()
         return jsonify({"recommended_numbers": recommended})
