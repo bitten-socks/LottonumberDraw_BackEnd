@@ -1,4 +1,54 @@
-numbers[:6]
+from flask import Flask, jsonify, request
+from flask_cors import CORS, cross_origin
+import requests
+from bs4 import BeautifulSoup
+import numpy as np
+import random
+import re
+import os
+import json
+
+app = Flask(__name__)
+CORS(app, resources={r"/api/*": {"origins": "*"}}, methods=["GET", "POST", "OPTIONS"])
+
+HISTORICAL_FILE = "historical_data.json"  # 미리 업로드된 백본 JSON 파일
+
+# -----------------------------
+# 1) 공통 유틸 함수들
+# -----------------------------
+def fetch_lotto_probability():
+    url = "https://dhlottery.co.kr/gameResult.do?method=statByNumber"
+    response = requests.get(url)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    probability_data = {}
+    rows = soup.select("table.tbl_data tbody tr")
+    for row in rows:
+        columns = row.find_all("td")
+        if len(columns) >= 2:
+            number = int(columns[0].get_text(strip=True))
+            winning_count = float(columns[2].get_text(strip=True))
+            probability_data[number] = int(winning_count)
+    return probability_data
+
+def fetch_lotto_winningNumber():
+    url = "https://dhlottery.co.kr/gameResult.do?method=byWin&wiselog=C_A_1_2"
+    response = requests.get(url)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    current_play = {}
+    draw_number = soup.find('h4').get_text(strip=True)
+    match = re.search(r'\d+', draw_number)
+    if match:
+        current_play['draw'] = int(match.group())
+    
+    winning_number = {}
+    number_tags = soup.select('.ball_645')
+    winning_numbers = [int(tag.get_text()) for tag in number_tags]
+    if len(winning_numbers) >= 6:
+        winning_number['numbers'] = winning_numbers[:6]
         winning_number['bonus'] = winning_numbers[6]
     
     return {
