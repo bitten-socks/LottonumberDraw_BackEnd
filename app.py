@@ -145,9 +145,14 @@ def select_numbers_from_groups(selected_groups, probabilities, method_choice, n=
 
 # 특정 회차의 당첨 번호를 조회하는 함수
 def fetch_lotto_numbers_by_round(round_num):
+    print(f"[DEBUG] fetch_lotto_numbers_by_round({round_num}) 호출됨.")
     url = f"https://www.dhlottery.co.kr/gameResult.do?method=byWin&drwNo={round_num}"
-    response = requests.get(url)
-    response.raise_for_status()
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"[ERROR] 회차 {round_num} 데이터 요청 실패: {e}")
+        return {}
     soup = BeautifulSoup(response.text, 'html.parser')
     data = {}
     
@@ -157,29 +162,40 @@ def fetch_lotto_numbers_by_round(round_num):
         if match:
             data['round'] = int(match.group())
     else:
-        print(f"회차 정보를 찾을 수 없습니다. (round: {round_num})")
+        print(f"[WARN] 회차 정보 없음 (round: {round_num})")
     
     number_tags = soup.select('.ball_645')
     if number_tags:
-        winning_numbers = [int(tag.get_text()) for tag in number_tags]
-        if len(winning_numbers) >= 6:
-            data['winning_numbers'] = winning_numbers[:6]
-            data['bonus'] = winning_numbers[6] if len(winning_numbers) > 6 else None
-        else:
-            print(f"당첨 번호가 충분하지 않습니다. (round: {round_num})")
+        try:
+            winning_numbers = [int(tag.get_text()) for tag in number_tags]
+            if len(winning_numbers) >= 6:
+                data['winning_numbers'] = winning_numbers[:6]
+                data['bonus'] = winning_numbers[6] if len(winning_numbers) > 6 else None
+            else:
+                print(f"[WARN] 회차 {round_num} 당첨 번호 부족: {winning_numbers}")
+        except Exception as e:
+            print(f"[ERROR] 회차 {round_num} 당첨 번호 파싱 실패: {e}")
     else:
-        print(f"당첨 번호 요소를 찾을 수 없습니다. (round: {round_num})")
+        print(f"[WARN] 회차 {round_num} 당첨 번호 요소 없음.")
     
+    print(f"[DEBUG] fetch_lotto_numbers_by_round({round_num}) 결과: {data}")
     return data
+
 
 # 전체 역대 당첨 번호 데이터를 크롤링하는 함수 (최초 실행 시 사용)
 def fetch_all_historical_numbers():
+    print("[DEBUG] fetch_all_historical_numbers() 호출됨.")
     url = "https://www.dhlottery.co.kr/gameResult.do?method=allWin"
-    response = requests.get(url)
-    response.raise_for_status()
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"[ERROR] 전체 역대 데이터 요청 실패: {e}")
+        return []
     soup = BeautifulSoup(response.text, 'html.parser')
     historical_data = []
     rows = soup.select("table.tbl_data tbody tr")
+    print(f"[DEBUG] 전체 역대 데이터에서 {len(rows)} 행을 찾음.")
     for row in rows:
         columns = row.find_all("td")
         if len(columns) >= 7:
@@ -191,30 +207,46 @@ def fetch_all_historical_numbers():
                     "winning_numbers": numbers
                 })
             except Exception as e:
+                print(f"[WARN] 회차 파싱 실패: {e}")
                 continue
+    print(f"[DEBUG] fetch_all_historical_numbers() 완료, {len(historical_data)} 회차 데이터 수집됨.")
     return historical_data
 
 # 증분 업데이트 방식: 캐시 파일에 저장된 역대 데이터를 업데이트
 def update_historical_data():
+    print("[DEBUG] update_historical_data() 호출됨.")
     if os.path.exists(HISTORICAL_FILE):
-        with open(HISTORICAL_FILE, "r") as f:
-            historical_data = json.load(f)
-        historical_data = [
-            {"round": int(item["round"]), "winning_numbers": item["winning_numbers"]}
-            for item in historical_data
-        ]
+        try:
+            with open(HISTORICAL_FILE, "r") as f:
+                historical_data = json.load(f)
+            # 캐시 파일의 데이터가 올바른 형식인지 로그 찍기
+            print(f"[DEBUG] 캐시 파일에서 {len(historical_data)} 개의 회차 데이터를 로드함.")
+            historical_data = [
+                {"round": int(item["round"]), "winning_numbers": item["winning_numbers"]}
+                for item in historical_data
+            ]
+        except Exception as e:
+            print(f"[ERROR] 캐시 파일 로드 실패: {e}")
+            historical_data = []
     else:
+        print("[DEBUG] 캐시 파일이 존재하지 않음. 전체 데이터를 크롤링합니다.")
         historical_data = fetch_all_historical_numbers()
     
-    current_data = fetch_lotto_winningNumber()
-    current_round = current_data["current_play"]["draw"]
-    target_round = current_round - 1  # 최신 당첨 결과가 있는 회차
+    try:
+        current_data = fetch_lotto_winningNumber()
+        current_round = current_data["current_play"]["draw"]
+        print(f"[DEBUG] 현재 회차: {current_round}")
+    except Exception as e:
+        print(f"[ERROR] 현재 회차 데이터 가져오기 실패: {e}")
+        current_round = 0
 
+    target_round = current_round - 1  # 최신 당첨 결과가 있는 회차
     if historical_data:
         max_round = max(item["round"] for item in historical_data)
     else:
         max_round = 0
-
+    print(f"[DEBUG] 캐시 데이터 최대 회차: {max_round}, 업데이트 대상 회차: {max_round + 1} ~ {target_round}")
+    
     new_data = []
     for r in range(max_round + 1, target_round + 1):
         try:
@@ -224,49 +256,70 @@ def update_historical_data():
                     "round": r,
                     "winning_numbers": data["winning_numbers"]
                 })
+                print(f"[DEBUG] 회차 {r} 데이터 업데이트 성공.")
+            else:
+                print(f"[WARN] 회차 {r} 데이터가 없거나 빈 값.")
         except Exception as e:
-            print(f"회차 {r} 업데이트 실패: {e}")
-
+            print(f"[ERROR] 회차 {r} 업데이트 실패: {e}")
+    
     if new_data:
         historical_data.extend(new_data)
         historical_data = sorted(historical_data, key=lambda x: x["round"])
-        with open(HISTORICAL_FILE, "w") as f:
-            json.dump(historical_data, f)
-        print(f"{len(new_data)}개의 새로운 회차 데이터를 업데이트했습니다.")
+        try:
+            with open(HISTORICAL_FILE, "w") as f:
+                json.dump(historical_data, f)
+            print(f"[DEBUG] {len(new_data)}개의 새로운 회차 데이터를 캐시 파일에 저장했습니다.")
+        except Exception as e:
+            print(f"[ERROR] 캐시 파일 저장 실패: {e}")
     else:
-        print("새로운 회차 데이터가 없습니다.")
+        print("[DEBUG] 새로운 회차 데이터 없음.")
 
     return historical_data
 
+
 # 추천 번호군을 산출하는 함수 (증분 업데이트된 데이터를 사용)
 def get_recommended_numbers():
+    print("[DEBUG] get_recommended_numbers() 호출됨.")
     historical_data = update_historical_data()
+    if not historical_data:
+        raise Exception("역대 당첨 데이터가 없습니다.")
     data_dict = {item['round']: item['winning_numbers'] for item in historical_data}
     
     current_data = fetch_lotto_winningNumber()
-    current_round = current_data['current_play']['draw']
+    try:
+        current_round = current_data['current_play']['draw']
+    except Exception as e:
+        print(f"[ERROR] 현재 회차 정보 파싱 실패: {e}")
+        raise e
     previous_round = current_round - 1
+    print(f"[DEBUG] 현재 회차: {current_round}, 직전 회차: {previous_round}")
 
     previous_winning = data_dict.get(previous_round)
     if not previous_winning:
+        print(f"[WARN] 캐시에서 직전 회차({previous_round}) 데이터가 없음. 개별 조회 시도...")
         prev_data = fetch_lotto_numbers_by_round(previous_round)
         previous_winning = prev_data.get("winning_numbers", [])
     
     if not previous_winning:
         raise Exception("이전 회차 당첨번호를 가져올 수 없습니다.")
-    
+
+    print(f"[DEBUG] 직전 회차 당첨 번호: {previous_winning}")
+
     candidate_counts = {}
     for r in data_dict:
         if r < previous_round and (r + 1) in data_dict:
             if data_dict[r] == previous_winning:
                 candidate = tuple(data_dict[r + 1])
                 candidate_counts[candidate] = candidate_counts.get(candidate, 0) + 1
+                print(f"[DEBUG] 회차 {r}와 일치: 다음 회차 {r+1} 번호 {data_dict[r+1]}")
     
     if not candidate_counts:
         raise Exception("일치하는 과거 회차를 찾을 수 없습니다.")
     
     sorted_candidates = sorted(candidate_counts.items(), key=lambda x: x[1], reverse=True)
+    print(f"[DEBUG] 후보들: {sorted_candidates}")
     recommended_candidates = [list(candidate) for candidate, count in sorted_candidates[:3]]
+    print(f"[DEBUG] 최종 추천 번호군: {recommended_candidates}")
     return recommended_candidates
 
 # API 엔드포인트: 번호 생성 (선택된 그룹 및 추출 방식에 따라)
