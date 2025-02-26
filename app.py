@@ -275,8 +275,8 @@ def update_historical_data():
 def get_recommended_numbers():
     """
     1) update_historical_data()로 최신 데이터 확보
-    2) 최신 회차 당첨 번호군 패턴을 추출하고,
-       과거 회차 중 동일한 번호군 패턴을 가진 회차의 다음 회차 번호군을 후보로 수집
+    2) 최신 회차 당첨 번호의 번호군 패턴을 추출하고,
+       과거 회차 중 동일한 번호군 패턴을 가진 회차의 다음 회차 번호군 패턴을 후보로 수집
     3) 후보가 없으면 빈 리스트, 있으면 빈도 순 상위 3개 반환
     """
     print("[DEBUG] get_recommended_numbers() 호출됨.")
@@ -307,11 +307,13 @@ def get_recommended_numbers():
     candidate_counts = {}
     for r in data_dict:
         if r < previous_round and (r + 1) in data_dict:
+            # 과거 회차 r의 번호군 패턴
             past_pattern = get_group_pattern(data_dict[r])
             if past_pattern == previous_pattern:
-                candidate = tuple(data_dict[r + 1])
+                # 후보: (r+1) 회차의 번호군 패턴
+                candidate = tuple(get_group_pattern(data_dict[r + 1]))
                 candidate_counts[candidate] = candidate_counts.get(candidate, 0) + 1
-                print(f"[DEBUG] 회차 {r} (패턴: {past_pattern})와 일치 -> 다음 회차 {r+1}: {data_dict[r+1]}")
+                print(f"[DEBUG] 회차 {r} (패턴: {past_pattern})와 일치 -> 다음 회차 {r+1}: {get_group_pattern(data_dict[r+1])}")
     
     if not candidate_counts:
         print("[WARN] 일치하는 과거 회차를 찾지 못했습니다. 추천 번호군을 반환할 수 없습니다.")
