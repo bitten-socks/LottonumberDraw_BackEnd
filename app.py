@@ -369,9 +369,64 @@ def recommend_numbers():
         return jsonify({"recommended_numbers": recommended})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+# -----------------------------
+# 6) QR 등록
+# -----------------------------
+@app.route('/api/register-lotto', methods=['POST', 'OPTIONS'])
+@cross_origin()
+def register_lotto():
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    data = request.get_json()
+    url = data.get('url')
+    if not url:
+        return jsonify({"error": "URL이 전달되지 않았습니다."}), 400
+
+    expected_prefix = "https://m.dhlottery.co.kr/qr.do?method=winQr&v="
+    if not url.startswith(expected_prefix):
+        return jsonify({"error": "유효하지 않은 QR 코드입니다."}), 400
+
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+    except Exception as e:
+        return jsonify({"error": "QR 코드 페이지를 가져오는데 실패했습니다.", "details": str(e)}), 500
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+    numbers = []
+
+    # 우선, .ball 또는 .num 클래스를 가진 요소를 사용하여 번호 추출
+    ball_elements = soup.select('.ball') or soup.select('.num') or soup.find_all('span')
+    for elem in ball_elements:
+        text = elem.get_text(strip=True)
+        if re.match(r'^\d{1,2}$', text):
+            try:
+                numbers.append(int(text))
+            except ValueError:
+                continue
+
+    # 만약 충분한 번호가 추출되지 않으면, 페이지 전체 텍스트에서 정규식으로 번호를 찾기
+    if len(numbers) < 6:
+        all_text = soup.get_text()
+        numbers = [int(x) for x in re.findall(r'\b\d{1,2}\b', all_text)]
+        numbers = [n for n in numbers if 1 <= n <= 45]
+
+    if len(numbers) < 6:
+        return jsonify({"error": "로또 번호를 추출할 수 없습니다.", "extracted": numbers}), 400
+
+    # 추출한 번호 중 앞 6개를 당첨 번호로 사용하고, 추가 번호가 있다면 보너스 번호로 사용
+    winning_numbers = numbers[:6]
+    bonus_number = numbers[6] if len(numbers) > 6 else None
+
+    return jsonify({
+        "registeredNumbers": winning_numbers,
+        "bonus": bonus_number
+    })
+
 
 # -----------------------------
-# 6) 메인 실행
+# 7) 메인 실행
 # -----------------------------
 if __name__ == '__main__':
     app.run(debug=True)
