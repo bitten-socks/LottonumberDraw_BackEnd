@@ -386,7 +386,7 @@ def register_lotto():
         print("[ERROR] URL이 전달되지 않음")
         return jsonify({"error": "URL이 전달되지 않았습니다."}), 400
 
-    # 기존 형식 검증 (두 형식 모두 허용)
+    # 두 가지 형식을 허용
     expected_prefix1 = "https://m.dhlottery.co.kr/qr.do?method=winQr&v="
     expected_prefix2 = "http://m.dhlottery.co.kr/?v="
     if not (url.startswith(expected_prefix1) or url.startswith(expected_prefix2)):
@@ -402,13 +402,11 @@ def register_lotto():
         print("[ERROR] 첫 번째 QR 코드 페이지 요청 실패:", e)
         return jsonify({"error": "QR 코드 페이지를 가져오는데 실패했습니다.", "details": str(e)}), 500
 
-    # 만약 응답에 자바스크립트 리다이렉트 코드가 있다면, 새 URL로 재요청
+    # 만약 응답에 자바스크립트 리다이렉트 코드가 있으면 새 URL 구성 후 재요청
     if "document.location.href" in response.text:
-        # 원래 URL에서 ?v= 이후의 파라미터를 추출
         parts = url.split('?v=')
         if len(parts) == 2:
             param = parts[1]
-            # encodeURIComponent 효과를 위해 requests.utils.quote 사용 (공백 등 특수문자 인코딩)
             from requests.utils import quote
             new_url = "https://m.dhlottery.co.kr/qr.do?method=winQr&v=" + quote(param, safe='')
             print("[DEBUG] 리다이렉트 URL 구성됨:", new_url)
@@ -423,10 +421,11 @@ def register_lotto():
             print("[ERROR] URL에서 '?v=' 파라미터 추출 실패")
             return jsonify({"error": "URL에서 '?v=' 파라미터를 추출할 수 없습니다."}), 400
 
+    # HTML 파싱 시작 (리다이렉트 후의 페이지)
     soup = BeautifulSoup(response.text, 'html.parser')
     numbers = []
 
-    # 새로운 선택자: table.tbl_basic 내 td.result의 span 태그들
+    # 당첨 번호 추출: table.tbl_basic tbody td.result span (일반 선택자)
     span_elements = soup.select('table.tbl_basic tbody td.result span')
     print("[DEBUG] .tbl_basic .result span 개수:", len(span_elements))
     if span_elements:
@@ -439,7 +438,7 @@ def register_lotto():
                 except ValueError as ve:
                     print("[ERROR] 숫자 변환 실패:", ve)
     else:
-        # fallback: 모든 span 태그에서 찾기
+        # fallback: 모든 span 태그 검색
         span_elements = soup.find_all('span')
         print("[DEBUG] span 태그 결과 개수 (fallback):", len(span_elements))
         for elem in span_elements:
@@ -451,7 +450,6 @@ def register_lotto():
                     print("[ERROR] 숫자 변환 실패:", ve)
 
     print("[DEBUG] 추출된 번호 개수 (첫번째 시도):", len(numbers))
-
     if len(numbers) < 6:
         all_text = soup.get_text()
         print("[DEBUG] 전체 페이지 텍스트 길이:", len(all_text))
@@ -467,11 +465,36 @@ def register_lotto():
     bonus_number = numbers[6] if len(numbers) > 6 else None
 
     print("[DEBUG] 최종 당첨 번호:", winning_numbers, "보너스 번호:", bonus_number)
+
+    # 추가: A~E 행 데이터 추출 (테이블 내 행 데이터)
+    rows_data = []
+    table_rows = soup.select('table.tbl_basic tbody tr')
+    print("[DEBUG] A~E 행 추출을 위한 tr 개수:", len(table_rows))
+    for tr in table_rows:
+        tds = tr.find_all('td')
+        if len(tds) < 2:
+            continue
+        row_label = tds[0].get_text(strip=True)
+        numbers_spans = tds[1].find_all('span')
+        row_numbers = []
+        for span in numbers_spans:
+            text = span.get_text(strip=True)
+            if re.match(r'^\d{1,2}$', text):
+                try:
+                    row_numbers.append(int(text))
+                except ValueError as ve:
+                    print("[ERROR] 숫자 변환 실패 in row:", ve)
+        rows_data.append({
+            "row": row_label,
+            "numbers": row_numbers
+        })
+    print("[DEBUG] A~E 행 파싱 결과:", rows_data)
+
     return jsonify({
         "registeredNumbers": winning_numbers,
-        "bonus": bonus_number
+        "bonus": bonus_number,
+        "rowData": rows_data
     })
-
 # -----------------------------
 # 7) 메인 실행
 # -----------------------------
