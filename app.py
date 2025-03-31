@@ -386,6 +386,7 @@ def register_lotto():
         print("[ERROR] URL이 전달되지 않음")
         return jsonify({"error": "URL이 전달되지 않았습니다."}), 400
 
+    # 기존 형식 검증 (두 형식 모두 허용)
     expected_prefix1 = "https://m.dhlottery.co.kr/qr.do?method=winQr&v="
     expected_prefix2 = "http://m.dhlottery.co.kr/?v="
     if not (url.startswith(expected_prefix1) or url.startswith(expected_prefix2)):
@@ -395,31 +396,52 @@ def register_lotto():
     try:
         response = requests.get(url)
         response.raise_for_status()
-        print("[DEBUG] QR 코드 페이지 요청 성공. 응답 길이:", len(response.text))
-        print(response.text)  # 여기서 전체 HTML 내용을 로그로 출력
-        print("[DEBUG] 응답 길이:", len(response.text))
+        print("[DEBUG] 첫 번째 QR 코드 페이지 요청 성공. 응답 길이:", len(response.text))
+        print("[DEBUG] Response text snippet:", response.text[:200])
     except Exception as e:
-        print("[ERROR] QR 코드 페이지 요청 실패:", e)
+        print("[ERROR] 첫 번째 QR 코드 페이지 요청 실패:", e)
         return jsonify({"error": "QR 코드 페이지를 가져오는데 실패했습니다.", "details": str(e)}), 500
+
+    # 만약 응답에 자바스크립트 리다이렉트 코드가 있다면, 새 URL로 재요청
+    if "document.location.href" in response.text:
+        # 원래 URL에서 ?v= 이후의 파라미터를 추출
+        parts = url.split('?v=')
+        if len(parts) == 2:
+            param = parts[1]
+            # encodeURIComponent 효과를 위해 requests.utils.quote 사용 (공백 등 특수문자 인코딩)
+            from requests.utils import quote
+            new_url = "https://m.dhlottery.co.kr/qr.do?method=winQr&v=" + quote(param, safe='')
+            print("[DEBUG] 리다이렉트 URL 구성됨:", new_url)
+            try:
+                response = requests.get(new_url)
+                response.raise_for_status()
+                print("[DEBUG] 리다이렉트 후 QR 코드 페이지 요청 성공. 응답 길이:", len(response.text))
+            except Exception as e:
+                print("[ERROR] 리다이렉트 후 QR 코드 페이지 요청 실패:", e)
+                return jsonify({"error": "리다이렉트 후 QR 코드 페이지를 가져오는데 실패했습니다.", "details": str(e)}), 500
+        else:
+            print("[ERROR] URL에서 '?v=' 파라미터 추출 실패")
+            return jsonify({"error": "URL에서 '?v=' 파라미터를 추출할 수 없습니다."}), 400
 
     soup = BeautifulSoup(response.text, 'html.parser')
     numbers = []
 
-    # 우선, .ball 또는 .num 클래스를 가진 요소를 사용하여 번호 추출
+    # 새로운 선택자: table.tbl_basic 내 td.result의 span 태그들
     span_elements = soup.select('table.tbl_basic tbody td.result span')
     print("[DEBUG] .tbl_basic .result span 개수:", len(span_elements))
-    for elem in span_elements:
-        text = elem.get_text(strip=True)
-        print("[DEBUG] span 텍스트:", text)
-        if re.match(r'^\d{1,2}$', text):  # 1~2자리 숫자
-            try:
-                numbers.append(int(text))
-            except ValueError as ve:
-                print("[ERROR] 숫자 변환 실패:", ve)
+    if span_elements:
+        for elem in span_elements:
+            text = elem.get_text(strip=True)
+            print("[DEBUG] span 텍스트:", text)
+            if re.match(r'^\d{1,2}$', text):
+                try:
+                    numbers.append(int(text))
+                except ValueError as ve:
+                    print("[ERROR] 숫자 변환 실패:", ve)
     else:
         # fallback: 모든 span 태그에서 찾기
         span_elements = soup.find_all('span')
-        print("[DEBUG] span 태그 결과 개수:", len(span_elements))
+        print("[DEBUG] span 태그 결과 개수 (fallback):", len(span_elements))
         for elem in span_elements:
             text = elem.get_text(strip=True)
             if re.match(r'^\d{1,2}$', text):
@@ -430,7 +452,6 @@ def register_lotto():
 
     print("[DEBUG] 추출된 번호 개수 (첫번째 시도):", len(numbers))
 
-    # 만약 충분한 번호가 추출되지 않으면, 페이지 전체 텍스트에서 정규식으로 번호 찾기
     if len(numbers) < 6:
         all_text = soup.get_text()
         print("[DEBUG] 전체 페이지 텍스트 길이:", len(all_text))
@@ -442,7 +463,6 @@ def register_lotto():
         print("[ERROR] 추출된 번호가 부족함:", numbers)
         return jsonify({"error": "로또 번호를 추출할 수 없습니다.", "extracted": numbers}), 400
 
-    # 앞 6개를 당첨 번호로 사용하고, 추가 번호가 있다면 보너스 번호로 사용
     winning_numbers = numbers[:6]
     bonus_number = numbers[6] if len(numbers) > 6 else None
 
