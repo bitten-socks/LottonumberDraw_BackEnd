@@ -421,11 +421,11 @@ def register_lotto():
             print("[ERROR] URL에서 '?v=' 파라미터 추출 실패")
             return jsonify({"error": "URL에서 '?v=' 파라미터를 추출할 수 없습니다."}), 400
 
-    # HTML 파싱 시작
+    # HTML 파싱
     soup = BeautifulSoup(response.text, 'html.parser')
     numbers = []
 
-    # 당첨 번호 추출 (상단 번호) - fallback으로 모든 span 태그 검색
+    # (1) 상단 당첨 번호 추출 (fallback: 모든 <span>)
     span_elements = soup.find_all('span')
     print("[DEBUG] span 태그 결과 개수 (fallback):", len(span_elements))
     for elem in span_elements:
@@ -435,13 +435,16 @@ def register_lotto():
                 numbers.append(int(text))
             except ValueError as ve:
                 print("[ERROR] 숫자 변환 실패:", ve)
+
     print("[DEBUG] 추출된 번호 개수 (첫번째 시도):", len(numbers))
     if len(numbers) < 6:
+        # 전체 텍스트에서 정규식으로 추가 검색
         all_text = soup.get_text()
         print("[DEBUG] 전체 페이지 텍스트 길이:", len(all_text))
         numbers = [int(x) for x in re.findall(r'\b\d{1,2}\b', all_text)]
         numbers = [n for n in numbers if 1 <= n <= 45]
         print("[DEBUG] 추출된 번호 개수 (전체 텍스트 검색 후):", len(numbers))
+
     if len(numbers) < 6:
         print("[ERROR] 추출된 번호가 부족함:", numbers)
         return jsonify({"error": "로또 번호를 추출할 수 없습니다.", "extracted": numbers}), 400
@@ -450,27 +453,71 @@ def register_lotto():
     bonus_number = numbers[6] if len(numbers) > 6 else None
     print("[DEBUG] 최종 당첨 번호:", winning_numbers, "보너스 번호:", bonus_number)
 
-    # A~E 행 데이터 추출 (테이블 내 행 데이터)
+    # (2) A~E 행 데이터 추출
+    #  - 예: 
+    #    <tr>
+    #      <th scope="row">A</th>
+    #      <td class="result">낙첨</td>
+    #      <td>
+    #        <span class="clr">3</span>
+    #        <span class="clr">9</span>
+    #        ...
+    #      </td>
+    #    </tr>
     rows_data = []
-    # 모든 <tr> 태그를 찾음
+
+    # tbl_basic 테이블이 확실하다면 아래처럼:
+    # table = soup.find("table", class_="tbl_basic")
+    # if not table:
+    #   ...
+    #   return ...
+    # all_tr = table.find_all("tr")
+
+    # 또는 전체 tr 중에서 <th scope="row">가 A/B/C/D/E 인 행 찾기
     all_tr = soup.find_all("tr")
     print("[DEBUG] 전체 tr 개수:", len(all_tr))
+
     for tr in all_tr:
-        th = tr.find("th")
-        if th:
-            label = th.get_text(strip=True)
-            if label in ["A", "B", "C", "D", "E"]:
-                td = tr.find("td")
-                if td:
-                    # 기존에는 td 내 <span> 태그를 찾았지만, 
-                    # 실제로는 td 전체 텍스트에서 숫자를 추출합니다.
-                    td_text = td.get_text(" ", strip=True)
-                    print("[DEBUG] 행", label, "td 텍스트:", td_text)
-                    row_numbers = [int(x) for x in re.findall(r'\b\d{1,2}\b', td_text)]
-                    rows_data.append({
-                        "row": label,
-                        "numbers": row_numbers
-                    })
+        # <th scope="row">A</th>
+        th = tr.find("th", {"scope": "row"})
+        if not th:
+            continue
+
+        label = th.get_text(strip=True)
+        if label not in ["A", "B", "C", "D", "E"]:
+            continue
+
+        # 이제 <td>들이 최소 2개 존재:
+        #   첫 번째 <td class="result">낙첨</td>
+        #   두 번째 <td> 안에 <span class="clr">...</span> 번호들
+        tds = tr.find_all("td")
+        if len(tds) < 2:
+            continue
+
+        # 실제로는 tds[0]이 '낙첨'이고, tds[1]이 번호들
+        # 즉, 3개의 열이면 tds[0], tds[1], tds[2]... 등 구조에 따라 달라질 수 있음
+        # 스크린샷 상으론 tds[0] -> 낙첨, tds[1] -> <span class="clr">3</span> ...
+        # 만약 td가 2개뿐이라면 tds[1]이 번호
+        # 만약 td가 3개라면 tds[2]가 번호 (상황에 맞게 수정)
+        # 여기서는 2개뿐이라 가정 -> tds[1]이 번호 열
+        # (스크린샷에 따르면 td가 총 2개뿐이 아니라 3개 같으니, 실제 구조를 다시 확인하세요)
+
+        # 예시로 tds[1]을 번호 열로 가정
+        number_td = tds[1]
+
+        # <td> 안의 <span class="clr">...</span>들을 찾는다
+        span_in_td = number_td.find_all("span", class_="clr")
+        row_numbers = []
+        for sp in span_in_td:
+            text = sp.get_text(strip=True)
+            if re.match(r'^\d{1,2}$', text):
+                row_numbers.append(int(text))
+
+        rows_data.append({
+            "row": label,
+            "numbers": row_numbers
+        })
+
     print("[DEBUG] A~E 행 파싱 결과:", rows_data)
 
     return jsonify({
