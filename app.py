@@ -404,17 +404,16 @@ def register_lotto():
     numbers = []
 
     # 우선, .ball 또는 .num 클래스를 가진 요소를 사용하여 번호 추출
-    ball_elements = soup.select('.ball') or soup.select('.num')
-    print("[DEBUG] .ball/.num 선택자 결과 개수:", len(ball_elements) if ball_elements else 0)
-    if ball_elements:
-        for elem in ball_elements:
-            text = elem.get_text(strip=True)
-            print("[DEBUG] 요소 텍스트:", text)
-            if re.match(r'^\d{1,2}$', text):
-                try:
-                    numbers.append(int(text))
-                except ValueError as ve:
-                    print("[ERROR] 숫자 변환 실패:", ve)
+    span_elements = soup.select('table.tbl_basic tbody td.result span')
+    print("[DEBUG] .tbl_basic .result span 개수:", len(span_elements))
+    for elem in span_elements:
+        text = elem.get_text(strip=True)
+        print("[DEBUG] span 텍스트:", text)
+        if re.match(r'^\d{1,2}$', text):  # 1~2자리 숫자
+            try:
+                numbers.append(int(text))
+            except ValueError as ve:
+                print("[ERROR] 숫자 변환 실패:", ve)
     else:
         # fallback: 모든 span 태그에서 찾기
         span_elements = soup.find_all('span')
