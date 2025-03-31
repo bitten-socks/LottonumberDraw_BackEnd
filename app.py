@@ -396,6 +396,8 @@ def register_lotto():
         response = requests.get(url)
         response.raise_for_status()
         print("[DEBUG] QR 코드 페이지 요청 성공. 응답 길이:", len(response.text))
+        print(response.text)  # 여기서 전체 HTML 내용을 로그로 출력
+        print("[DEBUG] 응답 길이:", len(response.text))
     except Exception as e:
         print("[ERROR] QR 코드 페이지 요청 실패:", e)
         return jsonify({"error": "QR 코드 페이지를 가져오는데 실패했습니다.", "details": str(e)}), 500
