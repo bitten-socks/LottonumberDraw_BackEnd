@@ -386,8 +386,9 @@ def register_lotto():
         print("[ERROR] URL이 전달되지 않음")
         return jsonify({"error": "URL이 전달되지 않았습니다."}), 400
 
-    expected_prefix = "https://m.dhlottery.co.kr/qr.do?method=winQr&v="
-    if not url.startswith(expected_prefix):
+    expected_prefix1 = "https://m.dhlottery.co.kr/qr.do?method=winQr&v="
+    expected_prefix2 = "http://m.dhlottery.co.kr/?v="
+    if not (url.startswith(expected_prefix1) or url.startswith(expected_prefix2)):
         print("[ERROR] URL 형식 오류:", url)
         return jsonify({"error": "유효하지 않은 QR 코드입니다."}), 400
 
