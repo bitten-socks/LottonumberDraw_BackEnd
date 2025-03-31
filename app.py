@@ -402,7 +402,7 @@ def register_lotto():
         print("[ERROR] 첫 번째 QR 코드 페이지 요청 실패:", e)
         return jsonify({"error": "QR 코드 페이지를 가져오는데 실패했습니다.", "details": str(e)}), 500
 
-    # 자바스크립트 리다이렉트 코드가 있으면, 새 URL로 재요청
+    # 자바스크립트 리다이렉트 코드가 있으면 새 URL로 재요청
     if "document.location.href" in response.text:
         parts = url.split('?v=')
         if len(parts) == 2:
@@ -425,7 +425,7 @@ def register_lotto():
     soup = BeautifulSoup(response.text, 'html.parser')
     numbers = []
 
-    # 당첨 번호 추출 (상단 번호) - 우선 fallback: 모든 span 태그 검색
+    # 당첨 번호 추출 (상단 번호) - fallback으로 모든 span 태그 검색
     span_elements = soup.find_all('span')
     print("[DEBUG] span 태그 결과 개수 (fallback):", len(span_elements))
     for elem in span_elements:
@@ -450,9 +450,9 @@ def register_lotto():
     bonus_number = numbers[6] if len(numbers) > 6 else None
     print("[DEBUG] 최종 당첨 번호:", winning_numbers, "보너스 번호:", bonus_number)
 
-    # A~E 행 데이터 추출
+    # A~E 행 데이터 추출 (테이블 내 행 데이터)
     rows_data = []
-    # 우선, 모든 <tr> 태그를 순회하여, <th> 태그의 내용이 A~E 중 하나인 행을 찾음
+    # 모든 <tr> 태그를 찾음
     all_tr = soup.find_all("tr")
     print("[DEBUG] 전체 tr 개수:", len(all_tr))
     for tr in all_tr:
@@ -462,15 +462,11 @@ def register_lotto():
             if label in ["A", "B", "C", "D", "E"]:
                 td = tr.find("td")
                 if td:
-                    span_list = td.find_all("span")
-                    row_numbers = []
-                    for span in span_list:
-                        text = span.get_text(strip=True)
-                        if re.match(r'^\d{1,2}$', text):
-                            try:
-                                row_numbers.append(int(text))
-                            except ValueError as ve:
-                                print("[ERROR] 숫자 변환 실패 in row:", ve)
+                    # 기존에는 td 내 <span> 태그를 찾았지만, 
+                    # 실제로는 td 전체 텍스트에서 숫자를 추출합니다.
+                    td_text = td.get_text(" ", strip=True)
+                    print("[DEBUG] 행", label, "td 텍스트:", td_text)
+                    row_numbers = [int(x) for x in re.findall(r'\b\d{1,2}\b', td_text)]
                     rows_data.append({
                         "row": label,
                         "numbers": row_numbers
