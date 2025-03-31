@@ -402,7 +402,7 @@ def register_lotto():
         print("[ERROR] 첫 번째 QR 코드 페이지 요청 실패:", e)
         return jsonify({"error": "QR 코드 페이지를 가져오는데 실패했습니다.", "details": str(e)}), 500
 
-    # 만약 응답에 자바스크립트 리다이렉트 코드가 있으면 새 URL 구성 후 재요청
+    # 자바스크립트 리다이렉트 코드가 있으면, 새 URL로 재요청
     if "document.location.href" in response.text:
         parts = url.split('?v=')
         if len(parts) == 2:
@@ -421,34 +421,20 @@ def register_lotto():
             print("[ERROR] URL에서 '?v=' 파라미터 추출 실패")
             return jsonify({"error": "URL에서 '?v=' 파라미터를 추출할 수 없습니다."}), 400
 
-    # HTML 파싱 시작 (리다이렉트 후의 페이지)
+    # HTML 파싱 시작
     soup = BeautifulSoup(response.text, 'html.parser')
     numbers = []
 
-    # 당첨 번호 추출: table.tbl_basic tbody td.result span (일반 선택자)
-    span_elements = soup.select('table.tbl_basic tbody td.result span')
-    print("[DEBUG] .tbl_basic .result span 개수:", len(span_elements))
-    if span_elements:
-        for elem in span_elements:
-            text = elem.get_text(strip=True)
-            print("[DEBUG] span 텍스트:", text)
-            if re.match(r'^\d{1,2}$', text):
-                try:
-                    numbers.append(int(text))
-                except ValueError as ve:
-                    print("[ERROR] 숫자 변환 실패:", ve)
-    else:
-        # fallback: 모든 span 태그 검색
-        span_elements = soup.find_all('span')
-        print("[DEBUG] span 태그 결과 개수 (fallback):", len(span_elements))
-        for elem in span_elements:
-            text = elem.get_text(strip=True)
-            if re.match(r'^\d{1,2}$', text):
-                try:
-                    numbers.append(int(text))
-                except ValueError as ve:
-                    print("[ERROR] 숫자 변환 실패:", ve)
-
+    # 당첨 번호 추출 (상단 번호) - 우선 fallback: 모든 span 태그 검색
+    span_elements = soup.find_all('span')
+    print("[DEBUG] span 태그 결과 개수 (fallback):", len(span_elements))
+    for elem in span_elements:
+        text = elem.get_text(strip=True)
+        if re.match(r'^\d{1,2}$', text):
+            try:
+                numbers.append(int(text))
+            except ValueError as ve:
+                print("[ERROR] 숫자 변환 실패:", ve)
     print("[DEBUG] 추출된 번호 개수 (첫번째 시도):", len(numbers))
     if len(numbers) < 6:
         all_text = soup.get_text()
@@ -456,38 +442,39 @@ def register_lotto():
         numbers = [int(x) for x in re.findall(r'\b\d{1,2}\b', all_text)]
         numbers = [n for n in numbers if 1 <= n <= 45]
         print("[DEBUG] 추출된 번호 개수 (전체 텍스트 검색 후):", len(numbers))
-
     if len(numbers) < 6:
         print("[ERROR] 추출된 번호가 부족함:", numbers)
         return jsonify({"error": "로또 번호를 추출할 수 없습니다.", "extracted": numbers}), 400
 
     winning_numbers = numbers[:6]
     bonus_number = numbers[6] if len(numbers) > 6 else None
-
     print("[DEBUG] 최종 당첨 번호:", winning_numbers, "보너스 번호:", bonus_number)
 
-    # 추가: A~E 행 데이터 추출 (테이블 내 행 데이터)
+    # A~E 행 데이터 추출
     rows_data = []
-    table_rows = soup.select('table.tbl_basic tbody tr')
-    print("[DEBUG] A~E 행 추출을 위한 tr 개수:", len(table_rows))
-    for tr in table_rows:
-        tds = tr.find_all('td')
-        if len(tds) < 2:
-            continue
-        row_label = tds[0].get_text(strip=True)
-        numbers_spans = tds[1].find_all('span')
-        row_numbers = []
-        for span in numbers_spans:
-            text = span.get_text(strip=True)
-            if re.match(r'^\d{1,2}$', text):
-                try:
-                    row_numbers.append(int(text))
-                except ValueError as ve:
-                    print("[ERROR] 숫자 변환 실패 in row:", ve)
-        rows_data.append({
-            "row": row_label,
-            "numbers": row_numbers
-        })
+    # 우선, 모든 <tr> 태그를 순회하여, <th> 태그의 내용이 A~E 중 하나인 행을 찾음
+    all_tr = soup.find_all("tr")
+    print("[DEBUG] 전체 tr 개수:", len(all_tr))
+    for tr in all_tr:
+        th = tr.find("th")
+        if th:
+            label = th.get_text(strip=True)
+            if label in ["A", "B", "C", "D", "E"]:
+                td = tr.find("td")
+                if td:
+                    span_list = td.find_all("span")
+                    row_numbers = []
+                    for span in span_list:
+                        text = span.get_text(strip=True)
+                        if re.match(r'^\d{1,2}$', text):
+                            try:
+                                row_numbers.append(int(text))
+                            except ValueError as ve:
+                                print("[ERROR] 숫자 변환 실패 in row:", ve)
+                    rows_data.append({
+                        "row": label,
+                        "numbers": row_numbers
+                    })
     print("[DEBUG] A~E 행 파싱 결과:", rows_data)
 
     return jsonify({
